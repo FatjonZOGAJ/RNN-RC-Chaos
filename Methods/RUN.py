@@ -5,19 +5,52 @@
 """
 #!/usr/bin/env python
 
+import os
 import sys
+
+module_paths = [
+	os.path.abspath(os.getcwd() + '//..//rc_chaos//Methods'),
+	os.path.abspath(os.getcwd() + '//..//rc_chaos//Models')
+]
+
+for module_path in module_paths:
+	print(module_path)
+	if module_path not in sys.path:
+		sys.path.append(module_path)
+
 from Config.global_conf import global_params
 sys.path.insert(0, global_params.global_utils_path)
-from plotting_utils import *
-from global_utils import *
+from Models.Utils.plotting_utils import *
+from Models.Utils.global_utils import *
 
 import argparse
+
+def get_args_dict():
+	parser = defineParser()
+	args = parser.parse_args()
+	print(args.model_name)
+	args_dict = args.__dict__
+
+	# DEFINE PATHS AND DIRECTORIES
+	args_dict["saving_path"] = global_params.saving_path.format(args_dict["system_name"])
+	args_dict["model_dir"] = global_params.model_dir
+	args_dict["fig_dir"] = global_params.fig_dir
+	args_dict["results_dir"] = global_params.results_dir
+	args_dict["logfile_dir"] = global_params.logfile_dir
+	args_dict["train_data_path"] = global_params.training_data_path.format(args.system_name, args.N)
+	args_dict["test_data_path"] = global_params.testing_data_path.format(args.system_name, args.N)
+	args_dict["worker_id"] = 0
+
+	return args_dict
 
 
 def getModel(params):
 	sys.path.insert(0, global_params.py_models_path.format(params["model_name"]))
-	if params["model_name"] == "esn":
-		import esn as model
+	if params["model_name"] == "esn_rc_dyst":
+		from Models.esn import esn_rc_dyst as model
+		return model.esn(**params)
+	elif params["model_name"] == "esn":
+		from Models.esn import esn as model
 		return model.esn(params)
 	elif params["model_name"] == "esn_parallel":
 		import esn_parallel as model
@@ -35,6 +68,14 @@ def getModel(params):
 		raise ValueError("model not found.")
 
 def runModel(params_dict):
+	if params_dict["mode"] in ["rc_dyst"]:
+		model = getModel(params_dict)
+		model.train()
+		model.delete()
+		del model
+		testModel(params_dict)
+		return 0
+
 	if params_dict["mode"] in ["train", "all"]:
 		trainModel(params_dict)
 	if params_dict["mode"] in ["test", "all"]:
@@ -60,6 +101,9 @@ def defineParser():
 	parser = argparse.ArgumentParser()
 	subparsers = parser.add_subparsers(help='Selection of the model.', dest='model_name')
 
+	esn_parser = subparsers.add_parser("esn_rc_dyst")
+	esn_parser = getESNParser(esn_parser)
+
 	esn_parser = subparsers.add_parser("esn")
 	esn_parser = getESNParser(esn_parser)
 	
@@ -81,25 +125,7 @@ def defineParser():
 	return parser
 
 def main():
-	parser = defineParser()
-	args = parser.parse_args()
-	print(args.model_name)
-	args_dict = args.__dict__
-
-	# for key in args_dict:
-		# print(key)
-
-	# DEFINE PATHS AND DIRECTORIES
-	args_dict["saving_path"] = global_params.saving_path.format(args_dict["system_name"])
-	args_dict["model_dir"] = global_params.model_dir
-	args_dict["fig_dir"] = global_params.fig_dir
-	args_dict["results_dir"] = global_params.results_dir
-	args_dict["logfile_dir"] = global_params.logfile_dir
-	args_dict["train_data_path"] = global_params.training_data_path.format(args.system_name, args.N)
-	args_dict["test_data_path"] = global_params.testing_data_path.format(args.system_name, args.N)
-	args_dict["worker_id"] = 0
-
-	runModel(args_dict)
+	runModel(get_args_dict())
 
 if __name__ == '__main__':
 	main()

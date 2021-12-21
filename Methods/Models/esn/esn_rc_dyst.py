@@ -5,17 +5,43 @@
 				Vlachas Pantelis, CSE-lab, ETH Zurich
 """
 #!/usr/bin/env python
+import random
+
 import numpy as np
 import pickle
+
+from darts.models.forecasting.forecasting_model import GlobalForecastingModel
 from scipy import sparse as sparse
 from scipy.sparse import linalg as splinalg
 from scipy.linalg import pinv2 as scipypinv2
 # from scipy.linalg import lstsq as scipylstsq
 # from numpy.linalg import lstsq as numpylstsq
-from utils import *
 import os
-from Methods.Models.Utils.global_utils import *
-from Methods.Models.Utils.plotting_utils import *
+import sys
+
+# TODO: fix this so that it works from command line and PyCharm Debugger
+module_paths = [
+	os.path.abspath(os.getcwd()),
+	os.path.abspath(os.getcwd() + '//..'),
+	os.path.abspath(os.getcwd() + '//rc_chaos'),
+	os.path.abspath(os.getcwd() + '//rc_chaos//models'),
+	os.path.abspath(os.getcwd() + '//rc_chaos//Methods'),
+	os.path.abspath(os.getcwd() + '//..//rc_chaos//Methods'),
+	os.path.abspath(os.getcwd() + '//..//rc_chaos//Models//esn')
+]
+
+for module_path in module_paths:
+	print(module_path)
+	if module_path not in sys.path:
+		sys.path.append(module_path)
+
+from models.utils import eval_simple, eval_all_dyn_syst
+from rc_chaos.Methods.RUN import getModel, get_args_dict
+
+from rc_chaos.Methods.Models.Utils.global_utils import *
+from rc_chaos.Methods.Models.esn.utils import *
+from rc_chaos.Methods.Models.Utils.plotting_utils import *
+import pandas as pd
 import pickle
 import time
 from functools import partial
@@ -26,45 +52,50 @@ from sklearn.linear_model import Ridge
 # MEMORY TRACKING
 import psutil
 
-class esn(object):
+from typing import Union, Sequence, Optional
+from darts import TimeSeries
+import torch
+
+# TODO: RegressorModel or GlobalForecastingModel ?
+class esn(GlobalForecastingModel):
 	def delete(self):
 		return 0
 		
-	def __init__(self, params):
-		self.display_output = params["display_output"]
+	def __init__(self, **kwargs):
+		self.display_output = kwargs["display_output"]
 
-		print("RANDOM SEED: {:}".format(params["worker_id"]))
-		np.random.seed(params["worker_id"])
+		print("RANDOM SEED: {:}".format(kwargs["worker_id"]))
+		np.random.seed(kwargs["worker_id"])
 
-		self.worker_id = params["worker_id"]
-		self.input_dim = params["RDIM"]
-		self.N_used = params["N_used"]
-		self.approx_reservoir_size = params["approx_reservoir_size"]
-		self.degree = params["degree"]
-		self.radius = params["radius"]
-		self.sigma_input = params["sigma_input"]
-		self.dynamics_length = params["dynamics_length"]
-		self.iterative_prediction_length = params["iterative_prediction_length"]
-		self.num_test_ICS = params["num_test_ICS"]
-		self.train_data_path = params["train_data_path"]
-		self.test_data_path = params["test_data_path"]
-		self.fig_dir = params["fig_dir"]
-		self.model_dir = params["model_dir"]
-		self.logfile_dir = params["logfile_dir"]
-		self.write_to_log = params["write_to_log"]
-		self.results_dir = params["results_dir"]
-		self.saving_path = params["saving_path"]
-		self.regularization = params["regularization"]
-		self.scaler_tt = params["scaler"]
-		self.learning_rate = params["learning_rate"]
-		self.number_of_epochs = params["number_of_epochs"]
-		self.solver = str(params["solver"])
+		self.worker_id = kwargs["worker_id"]
+		self.input_dim = kwargs["RDIM"]
+		self.N_used = kwargs["N_used"]
+		self.approx_reservoir_size = kwargs["approx_reservoir_size"]
+		self.degree = kwargs["degree"]
+		self.radius = kwargs["radius"]
+		self.sigma_input = kwargs["sigma_input"]
+		self.dynamics_length = kwargs["dynamics_length"]
+		self.iterative_prediction_length = kwargs["iterative_prediction_length"]
+		self.num_test_ICS = kwargs["num_test_ICS"]
+		self.train_data_path = kwargs["train_data_path"]
+		self.test_data_path = kwargs["test_data_path"]
+		self.fig_dir = kwargs["fig_dir"]
+		self.model_dir = kwargs["model_dir"]
+		self.logfile_dir = kwargs["logfile_dir"]
+		self.write_to_log = kwargs["write_to_log"]
+		self.results_dir = kwargs["results_dir"]
+		self.saving_path = kwargs["saving_path"]
+		self.regularization = kwargs["regularization"]
+		self.scaler_tt = kwargs["scaler"]
+		self.learning_rate = kwargs["learning_rate"]
+		self.number_of_epochs = kwargs["number_of_epochs"]
+		self.solver = str(kwargs["solver"])
 		##########################################
 		self.scaler = scaler(self.scaler_tt)
-		self.noise_level = params["noise_level"]
-		self.model_name = self.createModelName(params)
+		self.noise_level = kwargs["noise_level"]
+		self.model_name = self.createModelName(kwargs)
 
-		self.reference_train_time = 60*60*(params["reference_train_time"]-params["buffer_train_time"])
+		self.reference_train_time = 60*60*(kwargs["reference_train_time"] - kwargs["buffer_train_time"])
 		print("Reference train time {:} seconds / {:} minutes / {:} hours.".format(self.reference_train_time, self.reference_train_time/60, self.reference_train_time/60/60))
 
 		os.makedirs(self.saving_path + self.model_dir + self.model_name, exist_ok=True)
@@ -131,27 +162,24 @@ class esn(object):
 	# def getAugmentedStateSize(self):
 	#     return 2*self.reservoir_size
 
-	def train(self):
+	def fit(self,
+			series: Union[TimeSeries, Sequence[TimeSeries]],
+			past_covariates: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None,
+			future_covariates: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None
+			) -> None:
+		# input: TimeSeries DataArray
+		super().fit(series)
+		# input data
+		data = np.array(series.all_values())
+
 		self.start_time = time.time()
-		dynamics_length = self.dynamics_length
-		input_dim = self.input_dim
+		# TODO: dynamics length seems to be a hyperparameter
+		dynamics_length = int(len(data) * 2/7) #self.dynamics_length
+		input_dim = self.input_dim # 1
 		N_used = self.N_used
 
-		with open(self.train_data_path, "rb") as file:
-			# Pickle the "data" dictionary using the highest protocol available.
-			data = pickle.load(file)
-			train_input_sequence = data["train_input_sequence"]
-			print("Adding noise to the training data. {:} per mille ".format(self.noise_level))
-			train_input_sequence = addNoise(train_input_sequence, self.noise_level)
-			N_all, dim = np.shape(train_input_sequence)
-			if input_dim > dim: raise ValueError("Requested input dimension is wrong.")
-			train_input_sequence = train_input_sequence[:N_used, :input_dim]
-			dt = data["dt"]
-			del data
-		print("##Using {:}/{:} dimensions and {:}/{:} samples ##".format(input_dim, dim, N_used, N_all))
-		if N_used > N_all: raise ValueError("Not enough samples in the training data.")
-		print("SCALING")
-		
+		train_input_sequence = data.squeeze(1)
+
 		train_input_sequence = self.scaler.scaleData(train_input_sequence)
 
 		N, input_dim = np.shape(train_input_sequence)
@@ -160,7 +188,7 @@ class esn(object):
 		print("Initializing the reservoir weights...")
 		nodes_per_input = int(np.ceil(self.approx_reservoir_size/input_dim))
 		self.reservoir_size = int(input_dim*nodes_per_input)
-		self.sparsity = self.degree/self.reservoir_size;
+		self.sparsity = self.degree/self.reservoir_size 		# TODO: sparsity only 0.01
 		print("NETWORK SPARSITY: {:}".format(self.sparsity))
 		print("Computing sparse hidden to hidden weight matrix...")
 		W_h = self.getSparseWeights(self.reservoir_size, self.reservoir_size, self.radius, self.sparsity, self.worker_id)
@@ -286,18 +314,19 @@ class esn(object):
 		else:
 			return False
 
-	def predictSequence(self, input_sequence):
+	def predictSequence(self, input_sequence, n):
 		W_h = self.W_h
 		W_out = self.W_out
 		W_in = self.W_in
-		dynamics_length = self.dynamics_length
-		iterative_prediction_length = self.iterative_prediction_length
+		N = np.shape(input_sequence)[0]
+		# TODO: HAS TO BE LENGTH OF INPUT SEQUENCE TO PREDICT THE FOLLOWING STEPS
+		dynamics_length = N # int(N * 2/7) #self.dynamics_length
+		iterative_prediction_length = n  #self.iterative_prediction_length
 
 		self.reservoir_size, _ = np.shape(W_h)
-		N = np.shape(input_sequence)[0]
-		
+
 		# PREDICTION LENGTH
-		if N != iterative_prediction_length + dynamics_length: raise ValueError("Error! N != iterative_prediction_length + dynamics_length")
+		#if N != iterative_prediction_length + dynamics_length: raise ValueError("Error! N != iterative_prediction_length + dynamics_length")
 
 
 		prediction_warm_up = []
@@ -413,8 +442,23 @@ class esn(object):
 		return 0
 
 
-	def predictIndexes(self, input_sequence, ic_indexes, dt, set_name):
-		num_test_ICS = self.num_test_ICS
+	#def predictIndexes(self, input_sequence, ic_indexes, dt, set_name):
+	def predict(self,
+				n: int,
+				series: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None,
+				past_covariates: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None,
+				future_covariates: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None,
+				num_samples: int = 1,
+				) -> Union[TimeSeries, Sequence[TimeSeries]]:
+		if series is None:
+			series = self.training_series
+		input_sequence = series.all_values().squeeze(1) # (1000, 1)
+		#self.iterative_prediction_length = n
+
+		dt = 0.01 # inverse frequency parameter # TODO: can be 0.25 for some dynamical systems
+		set_name = 'Test'
+
+		num_test_ICS = 1 # TODO self.num_test_ICS
 		input_sequence = self.scaler.scaleData(input_sequence, reuse=1)
 		predictions_all = []
 		truths_all = []
@@ -425,10 +469,16 @@ class esn(object):
 		for ic_num in range(num_test_ICS):
 			if self.display_output == True:
 				print("IC {:}/{:}, {:2.3f}%".format(ic_num, num_test_ICS, ic_num/num_test_ICS*100))
-			ic_idx = ic_indexes[ic_num]
-			input_sequence_ic = input_sequence[ic_idx-self.dynamics_length:ic_idx+self.iterative_prediction_length]
-			prediction, target, prediction_augment, target_augment = self.predictSequence(input_sequence_ic)
+			# TODO: try out only once with full length
+			#ic_idx = random.choice(range(self.dynamics_length, len(input_sequence) - self.iterative_prediction_length))[0]# random indexes within input_sequence_len
+			#input_sequence_ic = input_sequence[ic_idx-self.dynamics_length:ic_idx+self.iterative_prediction_length]
+			ic_idx = 0
+			input_sequence_ic = input_sequence
+			prediction, target, prediction_augment, target_augment = self.predictSequence(input_sequence_ic, n)
 			prediction = self.scaler.descaleData(prediction)
+			df = pd.DataFrame(np.squeeze(prediction))
+			df.index = range(len(input_sequence_ic), len(input_sequence_ic) + n)
+			return TimeSeries.from_dataframe(df)
 			target = self.scaler.descaleData(target)
 			rmse, rmnse, num_accurate_pred_005, num_accurate_pred_050, abserror = computeErrors(target, prediction, self.scaler.data_std)
 			predictions_all.append(prediction)
@@ -528,3 +578,10 @@ class esn(object):
 			del data
 		return 0
 
+def main():
+	eval_simple(getModel(get_args_dict()))
+	eval_all_dyn_syst(getModel(get_args_dict()))
+
+
+if __name__ == '__main__':
+	main()
