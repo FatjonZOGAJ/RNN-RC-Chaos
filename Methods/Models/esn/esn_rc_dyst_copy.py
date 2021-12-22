@@ -42,26 +42,6 @@ class esn(GlobalForecastingModel):
     def delete(self):
         return 0
 
-    # -
-    # display_output
-    # worker_id (seed)
-    # input_dim
-    # N_USED
-    # self.iterative_prediction_length = kwargs["iterative_prediction_length"]
-    # self.num_test_ICS = kwargs["num_test_ICS"]
-    # self.train_data_path = kwargs["train_data_path"]
-    # self.test_data_path = kwargs["test_data_path"]
-    # self.fig_dir = kwargs["fig_dir"]
-    # self.model_dir = kwargs["model_dir"]
-    # self.logfile_dir = kwargs["logfile_dir"]
-    # self.write_to_log = kwargs["write_to_log"]
-
-    # +
-    # approx_reservoir_size -> reservoir_size (1000)
-    # degree -> sparsity (0.01)
-    # radius 0.6
-    # sigma_input 1
-    # dynamics_length -> dynamics_fit_ratio 2/7
     def __init__(self, reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1, dynamics_fit_ratio=2/7, regularization=0.0,
                  scaler_tt='Standard', solver='auto'):
         # TODO: global random seed
