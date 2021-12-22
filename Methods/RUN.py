@@ -25,6 +25,14 @@ from Models.Utils.global_utils import *
 
 import argparse
 
+def new_args_dict():
+	parser = getNewESNParser()
+	args = parser.parse_args()
+
+	args_dict = args.__dict__
+	return args_dict
+
+
 def get_args_dict():
 	parser = defineParser()
 	args = parser.parse_args()
@@ -39,7 +47,7 @@ def get_args_dict():
 	args_dict["logfile_dir"] = global_params.logfile_dir
 	args_dict["train_data_path"] = global_params.training_data_path.format(args.system_name, args.N)
 	args_dict["test_data_path"] = global_params.testing_data_path.format(args.system_name, args.N)
-	args_dict["worker_id"] = 0
+	args_dict["worker_id"] = 0 # TODO: add global random seed setting
 
 	return args_dict
 

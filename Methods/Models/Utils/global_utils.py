@@ -4,6 +4,8 @@
 """Created by: Vlachas Pantelis, CSE-lab, ETH Zurich
 """
 #!/usr/bin/env python
+import argparse
+
 import numpy as np
 import pickle
 import io
@@ -314,6 +316,19 @@ def subsample(data, max_samples):
 		else:
 			data = data[::step][:max_samples]
 	return data
+
+def getNewESNParser():
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--reservoir_size", help="reservoir_size", type=int, required=True)
+	parser.add_argument("--sparsity", help="sparsity", type=float, required=True)
+	parser.add_argument("--radius", help="radius", type=float, required=True)
+	parser.add_argument("--sigma_input", help="sigma_input", type=float, required=True)
+	parser.add_argument("--dynamics_fit_ratio", help="dynamics_fit_ratio", type=float, required=True)
+	parser.add_argument("--regularization", help="regularization", type=float, required=True)
+	parser.add_argument("--scaler_tt", help="scaler_tt", type=str, required=True)
+	parser.add_argument("--solver", help="solver used to learn mapping H -> Y, it can be [pinv, saga, gd]", type=str, required=False, default="pinv")
+
+	return parser
 
 
 def getESNParser(parser):

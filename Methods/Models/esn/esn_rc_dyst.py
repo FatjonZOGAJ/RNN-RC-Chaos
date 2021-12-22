@@ -22,12 +22,12 @@ import sys
 # TODO: fix this so that it works from command line and PyCharm Debugger
 module_paths = [
 	os.path.abspath(os.getcwd()),
-	os.path.abspath(os.getcwd() + '//..'),
-	os.path.abspath(os.getcwd() + '//rc_chaos'),
-	os.path.abspath(os.getcwd() + '//rc_chaos//models'),
+	#os.path.abspath(os.getcwd() + '//..'),
+	#os.path.abspath(os.getcwd() + '//rc_chaos'),
+	#os.path.abspath(os.getcwd() + '//rc_chaos//models'),
 	os.path.abspath(os.getcwd() + '//rc_chaos//Methods'),
-	os.path.abspath(os.getcwd() + '//..//rc_chaos//Methods'),
-	os.path.abspath(os.getcwd() + '//..//rc_chaos//Models//esn')
+	#os.path.abspath(os.getcwd() + '//..//rc_chaos//Methods'),
+	#os.path.abspath(os.getcwd() + '//..//rc_chaos//Models//esn')
 ]
 
 for module_path in module_paths:
