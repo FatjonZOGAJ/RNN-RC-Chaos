@@ -23,7 +23,7 @@ for module_path in module_paths:
     if module_path not in sys.path:
         sys.path.append(module_path)
 
-from models.utils import eval_simple, eval_all_dyn_syst
+from models.utils import eval_simple, eval_all_dyn_syst, set_seed
 from rc_chaos.Methods.RUN import new_args_dict
 
 from rc_chaos.Methods.Models.Utils.global_utils import *
@@ -37,14 +37,15 @@ from sklearn.linear_model import Ridge
 from typing import Union, Sequence, Optional
 from darts import TimeSeries
 
+
 # TODO: RegressorModel or GlobalForecastingModel ?
 class esn(GlobalForecastingModel):
     def delete(self):
         return 0
 
-    def __init__(self, reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1, dynamics_fit_ratio=2/7, regularization=0.0,
-                 scaler_tt='Standard', solver='auto'):
-        # TODO: global random seed
+    def __init__(self, reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1, dynamics_fit_ratio=2 / 7,
+                 regularization=0.0, scaler_tt='Standard', solver='auto', model_name='RC-CHAOS-ESN',
+                 seed=1):
         self.reservoir_size = reservoir_size
         self.sparsity = sparsity
         self.radius = radius
@@ -53,8 +54,11 @@ class esn(GlobalForecastingModel):
         self.regularization = regularization
         self.scaler_tt = scaler_tt
         self.solver = solver
+        self.seed = seed
+        self.model_name = model_name + f"_{seed}"
         ##########################################
         self.scaler = scaler(self.scaler_tt)
+        set_seed(seed)
 
     def getSparseWeights(self, sizex, sizey, radius, sparsity):
         # W = np.zeros((sizex, sizey))
@@ -242,9 +246,15 @@ class esn(GlobalForecastingModel):
             return TimeSeries.from_dataframe(df)
 
 
+# TODO: evaluate different seeds and calculate average rank
+# TODO: calculate eigenvalues for those matrices and then plot in the landscape
+# for which dyn systs those perform best, are there any characteristics
 def main():
-    eval_simple(esn(**new_args_dict()))
-    eval_all_dyn_syst(esn(**new_args_dict()))
+    model_name = 'RC-CHAOS-ESN_DEBUG_DEFAULT'
+    kwargs = new_args_dict()
+    kwargs['model_name'] = model_name
+    eval_simple(esn(**kwargs))
+    eval_all_dyn_syst(esn(**kwargs))
 
 
 if __name__ == '__main__':
