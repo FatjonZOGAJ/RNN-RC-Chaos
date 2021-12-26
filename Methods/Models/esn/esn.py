@@ -14,8 +14,8 @@ from scipy.linalg import pinv2 as scipypinv2
 # from numpy.linalg import lstsq as numpylstsq
 from utils import *
 import os
-from plotting_utils import *
-from global_utils import *
+from rc_chaos.Methods.Models.Utils.global_utils import *
+from rc_chaos.Methods.Models.Utils.plotting_utils import *
 import pickle
 import time
 from functools import partial
