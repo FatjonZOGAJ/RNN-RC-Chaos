@@ -7,12 +7,13 @@
 # !/usr/bin/env python
 from darts.models.forecasting.forecasting_model import GlobalForecastingModel
 from scipy import sparse as sparse
-from scipy.sparse import linalg as splinalg
 from scipy.linalg import pinv2 as scipypinv2
 import os
 import sys
 
 # TODO: fix this so that it works from command line and PyCharm Debugger
+from rc_chaos.Methods.Models.esn.esn_cell import ESNCell
+
 module_paths = [
     os.path.abspath(os.getcwd()),
     os.path.abspath(os.getcwd() + '//rc_chaos//Methods'),
@@ -56,43 +57,18 @@ class esn(GlobalForecastingModel):
         self.solver = solver
         self.seed = seed
         self.model_name = model_name + f"_{seed}"
+        self.cell = ESNCell(reservoir_size, radius, sparsity, sigma_input)
         ##########################################
         self.scaler = scaler(self.scaler_tt)
         set_seed(seed)
 
-    def getSparseWeights(self, sizex, sizey, radius, sparsity):
-        # W = np.zeros((sizex, sizey))
-        # Sparse matrix with elements between 0 and 1
-        # WEIGHT INIT
-        W = sparse.random(sizex, sizey, density=sparsity)
-        # W = sparse.random(sizex, sizey, density=sparsity, random_state=worker_id, data_rvs=np.random.randn)
-        # Sparse matrix with elements between -1 and 1
-        # W.data *=2
-        # W.data -=1
-        # to print the values do W.A
-        # EIGENVALUE DECOMPOSITION
-        eigenvalues, eigvectors = splinalg.eigs(W)
-        eigenvalues = np.abs(eigenvalues)
-        W = (W / np.max(eigenvalues)) * radius
-        return W
-
     def augmentHidden(self, h):
         h_aug = h.copy()
-        # h_aug = pow(h_aug, 2.0)
-        # h_aug = np.concatenate((h,h_aug), axis=0)
         h_aug[::2] = pow(h_aug[::2], 2.0)
         return h_aug
 
     def getAugmentedStateSize(self):
         return self.reservoir_size
-
-    # def augmentHidden(self, h):
-    #     h_aug = h.copy()
-    #     h_aug = pow(h_aug, 2.0)
-    #     h_aug = np.concatenate((h,h_aug), axis=0)
-    #     return h_aug
-    # def getAugmentedStateSize(self):
-    #     return 2*self.reservoir_size
 
     def fit(self,
             series: Union[TimeSeries, Sequence[TimeSeries]],
@@ -108,23 +84,11 @@ class esn(GlobalForecastingModel):
 
         train_input_sequence = self.scaler.scaleData(train_input_sequence)
 
-        W_h = self.getSparseWeights(self.reservoir_size, self.reservoir_size, self.radius, self.sparsity)
-
-        # Initializing the input weights
-        W_in = np.zeros((self.reservoir_size, input_dim))
-        q = int(self.reservoir_size / input_dim)
-        for i in range(0, input_dim):
-            W_in[i * q:(i + 1) * q, i] = self.sigma_input * (-1 + 2 * np.random.rand(q))
-
         # TRAINING LENGTH
         tl = N - dynamics_length
 
-        # H_dyn = np.zeros((dynamics_length, self.getAugmentedStateSize(), 1))
-        h = np.zeros((self.reservoir_size, 1))
         for t in range(dynamics_length):
-            i = np.reshape(train_input_sequence[t], (-1, 1))
-            h = np.tanh(W_h @ h + W_in @ i)
-        # H_dyn[t] = self.augmentHidden(h)
+            self.cell.forward(train_input_sequence[t])
 
         if self.solver == "pinv":
             NORMEVERY = 10
@@ -135,8 +99,8 @@ class esn(GlobalForecastingModel):
 
         # TRAINING: Teacher forcing...
         for t in range(tl - 1):
-            i = np.reshape(train_input_sequence[t + dynamics_length], (-1, 1))
-            h = np.tanh(W_h @ h + W_in @ i)
+            h = self.cell.forward(train_input_sequence[t + dynamics_length])
+
             # AUGMENT THE HIDDEN STATE
             h_aug = self.augmentHidden(h)
             H.append(h_aug[:, 0])
@@ -164,7 +128,7 @@ class esn(GlobalForecastingModel):
             """
             I = np.identity(np.shape(HTH)[1])
             pinv_ = scipypinv2(HTH + self.regularization * I)
-            W_out = YTH @ pinv_
+            self.W_out = YTH @ pinv_
 
         elif self.solver in ["auto", "svd", "cholesky", "lsqr", "sparse_cg", "sag"]:
             """
@@ -173,44 +137,27 @@ class esn(GlobalForecastingModel):
             ridge = Ridge(alpha=self.regularization, fit_intercept=False, normalize=False, copy_X=True,
                           solver=self.solver)
             ridge.fit(H, Y)
-            W_out = ridge.coef_
+            self.W_out = ridge.coef_
         else:
             raise ValueError("Undefined solver.")
 
-        # FINALISING WEIGHTS...
-        self.W_in = W_in
-        self.W_h = W_h
-        self.W_out = W_out
-
-        # COMPUTING PARAMETERS...
-        self.n_trainable_parameters = np.size(self.W_out)
-        self.n_model_parameters = np.size(self.W_in) + np.size(self.W_h) + np.size(self.W_out)
-
     def predictSequence(self, input_sequence, n):
-        W_h = self.W_h
-        W_out = self.W_out
-        W_in = self.W_in
         N = np.shape(input_sequence)[0]
-        # HAS TO BE LENGTH OF INPUT SEQUENCE TO PREDICT THE FOLLOWING STEPS N + 1, N + 2, ...
         dynamics_length = N
-        iterative_prediction_length = n  # until N + n
-
-        self.reservoir_size, _ = np.shape(W_h)
+        iterative_prediction_length = n
 
         prediction_warm_up = []
-        h = np.zeros((self.reservoir_size, 1))
+        self.cell.reset()
         for t in range(dynamics_length):
-            i = np.reshape(input_sequence[t], (-1, 1))
-            h = np.tanh(W_h @ h + W_in @ i)
-            out = W_out @ self.augmentHidden(h)
+            h = self.cell.forward(input_sequence[t])
+            out = self.W_out @ self.augmentHidden(h)
             prediction_warm_up.append(out)
 
         prediction = []
         for t in range(iterative_prediction_length):
-            out = W_out @ self.augmentHidden(h)
+            out = self.W_out @ self.augmentHidden(h)
             prediction.append(out)
-            i = out
-            h = np.tanh(W_h @ h + W_in @ i)
+            h = self.cell.forward(out)
 
         prediction = np.array(prediction)[:, :, 0]
         prediction_warm_up = np.array(prediction_warm_up)[:, :, 0]
@@ -255,6 +202,11 @@ def main():
     kwargs['model_name'] = model_name
     eval_simple(esn(**kwargs))
     eval_all_dyn_syst(esn(**kwargs))
+
+    # for i in range(100, 200):
+    #     np.random.seed(i)
+    #     value, rank, weight = eval_single_dyn_syst(esn(**new_args_dict()), 'Chua')
+    #     print(f"Achieved rank {rank} with a value of {value}.")
 
 
 if __name__ == '__main__':
