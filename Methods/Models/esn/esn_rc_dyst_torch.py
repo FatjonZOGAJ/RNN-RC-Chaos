@@ -52,9 +52,12 @@ class esn(GlobalForecastingModel):
     def delete(self):
         return 0
 
-    def __init__(self, reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1, dynamics_fit_ratio=2 / 7,
+    def __init__(self, iters, cell_type, reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1,
+                 dynamics_fit_ratio=2 / 7,
                  regularization=0.0,
-                 scaler_tt='Standard', solver='auto'):
+                 scaler_tt='Standard', solver='auto', model_name='RC-CHAOS-ESN', seed=1, ensemble_base_model=False):
+        self.model_name = model_name
+        self.iters = iters
         self.reservoir_size = reservoir_size
         self.sparsity = sparsity
         self.radius = radius
@@ -63,14 +66,11 @@ class esn(GlobalForecastingModel):
         self.regularization = regularization
         self.scaler_tt = scaler_tt
         self.solver = solver
-        ##########################################
         self.scaler = scaler(self.scaler_tt)
 
     def getWeights(self, sizex, sizey, radius, sparsity):
         W = np.random.random((sizex, sizey))
-        # a = np.random.choice([True, False], (sizex, sizey), True, [0.9, 0.1])
-        # W[a] = 0
-        eigenvalues, _ = splinalg.eigs(W)
+        eigenvalues, _ = np.linalg.eig(W)
         eigenvalues = np.abs(eigenvalues)
         W = (W / np.max(eigenvalues)) * radius
         return W
@@ -113,7 +113,7 @@ class esn(GlobalForecastingModel):
         learning_rate = 0.01
         a0 = learning_rate
         decay = 0.95
-        iterations = 1
+        iterations = self.iters
         for iter in range(iterations):
             h = torch.zeros((self.reservoir_size, 1), dtype=torch.float64)
             # Washout phase
@@ -242,18 +242,18 @@ class esn(GlobalForecastingModel):
 def main():
     # eval_simple(esn(**new_args_dict()))
     # np.random.seed(114)
-    # value = eval_single_dyn_syst(esn(**new_args_dict()), 'Chua')
-    # best_seed = -1
-    # best_score = np.inf
-    # for i in range(100, 200):
-    #     np.random.seed(i)
-    #     value = eval_single_dyn_syst(esn(**new_args_dict()), 'Chua')
-    #     if value < best_score:
-    #         best_seed = i
-    #         best_score = value
-    # print(best_seed, best_score)
+    best_seed = -1
+    best_score = np.inf
+    for i in range(1, 10):
+        np.random.seed(0)
+        value, _, _ = eval_single_dyn_syst(esn(i, **new_args_dict()), 'YuWang')
+        if value < best_score:
+            best_seed = i
+            best_score = value
+    print(best_seed, best_score)
 
-    eval_all_dyn_syst(esn(**new_args_dict()))
+
+# value = eval_single_dyn_syst(esn(**new_args_dict()), 'Chua')
 
 
 if __name__ == '__main__':
