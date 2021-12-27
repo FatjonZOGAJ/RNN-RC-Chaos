@@ -6,13 +6,13 @@
 """
 # !/usr/bin/env python
 from darts.models.forecasting.forecasting_model import GlobalForecastingModel
-from scipy import sparse as sparse
 from scipy.linalg import pinv2 as scipypinv2
 import os
 import sys
 
 # TODO: fix this so that it works from command line and PyCharm Debugger
-from rc_chaos.Methods.Models.esn.esn_cell import ESNCell
+from rc_chaos.Methods.Models.esn.cells import get_cell
+from rc_chaos.Methods.Models.esn.cells.rnn_cell import RNNCell
 
 module_paths = [
     os.path.abspath(os.getcwd()),
@@ -44,7 +44,8 @@ class esn(GlobalForecastingModel):
     def delete(self):
         return 0
 
-    def __init__(self, reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1, dynamics_fit_ratio=2 / 7,
+    def __init__(self, cell="ESN", reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1,
+                 dynamics_fit_ratio=2 / 7,
                  regularization=0.0, scaler_tt='Standard', solver='auto', model_name='RC-CHAOS-ESN',
                  seed=1):
         self.reservoir_size = reservoir_size
@@ -57,7 +58,7 @@ class esn(GlobalForecastingModel):
         self.solver = solver
         self.seed = seed
         self.model_name = model_name + f"_{seed}"
-        self.cell = ESNCell(reservoir_size, radius, sparsity, sigma_input)
+        self.cell = get_cell(cell, reservoir_size, radius, sparsity, sigma_input)
         ##########################################
         self.scaler = scaler(self.scaler_tt)
         set_seed(seed)
@@ -134,7 +135,7 @@ class esn(GlobalForecastingModel):
             """
             Learns mapping H -> Y with Ridge Regression
             """
-            ridge = Ridge(alpha=self.regularization, fit_intercept=False, normalize=False, copy_X=True,
+            ridge = Ridge(alpha=self.regularization, fit_intercept=False, copy_X=True,
                           solver=self.solver)
             ridge.fit(H, Y)
             self.W_out = ridge.coef_
