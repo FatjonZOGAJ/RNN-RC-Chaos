@@ -9,6 +9,8 @@ import os
 import sys
 
 module_paths = [
+	os.path.abspath(os.getcwd() + '//rc_chaos//Methods'),
+	os.path.abspath(os.getcwd() + '//rc_chaos//Models'),
 	os.path.abspath(os.getcwd() + '//..//rc_chaos//Methods'),
 	os.path.abspath(os.getcwd() + '//..//rc_chaos//Models')
 ]

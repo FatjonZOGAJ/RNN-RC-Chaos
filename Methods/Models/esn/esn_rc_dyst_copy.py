@@ -13,6 +13,7 @@ import sys
 # TODO: fix this so that it works from command line and PyCharm Debugger
 from rc_chaos.Methods.Models.esn.cells import get_cell
 from rc_chaos.Methods.Models.esn.cells.rnn_cell import RNNCell
+from sklearn.base import BaseEstimator
 
 module_paths = [
     os.path.abspath(os.getcwd()),
@@ -40,14 +41,15 @@ from darts import TimeSeries
 
 
 # TODO: RegressorModel or GlobalForecastingModel ?
-class esn(GlobalForecastingModel):
+class esn(GlobalForecastingModel, BaseEstimator):
     def delete(self):
         return 0
 
-    def __init__(self, cell="ESN", reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1,
+    def __init__(self, cell_type="ESN", reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1,
                  dynamics_fit_ratio=2 / 7,
                  regularization=0.0, scaler_tt='Standard', solver='auto', model_name='RC-CHAOS-ESN',
-                 seed=1):
+                 seed=1, ensemble_base_model=False):
+        self.ensemble_base_model = ensemble_base_model      # return array instead of TimeSeries
         self.reservoir_size = reservoir_size
         self.sparsity = sparsity
         self.radius = radius
@@ -57,11 +59,12 @@ class esn(GlobalForecastingModel):
         self.scaler_tt = scaler_tt
         self.solver = solver
         self.seed = seed
-        self.model_name = model_name + f"_{seed}"
-        self.cell = get_cell(cell, reservoir_size, radius, sparsity, sigma_input)
+        self.model_name = model_name
+        self.cell_type = cell_type
         ##########################################
         self.scaler = scaler(self.scaler_tt)
         set_seed(seed)
+        self._estimator_type = 'regressor' # for VotingRegressor
 
     def augmentHidden(self, h):
         h_aug = h.copy()
@@ -77,6 +80,7 @@ class esn(GlobalForecastingModel):
             future_covariates: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None
             ) -> None:
         super().fit(series)
+        self.cell = get_cell(self.cell_type, self.reservoir_size, self.radius, self.sparsity, self.sigma_input)
 
         data = np.array(series.all_values())
         train_input_sequence = data.squeeze(1)
@@ -189,6 +193,8 @@ class esn(GlobalForecastingModel):
             input_sequence_ic = input_sequence
             prediction, prediction_augment = self.predictSequence(input_sequence_ic, n)
             prediction = self.scaler.descaleData(prediction)
+            if self.ensemble_base_model:
+                return np.squeeze(prediction)
             df = pd.DataFrame(np.squeeze(prediction))
             df.index = range(len(input_sequence_ic), len(input_sequence_ic) + n)
             return TimeSeries.from_dataframe(df)
