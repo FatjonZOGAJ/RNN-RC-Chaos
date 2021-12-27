@@ -11,3 +11,8 @@ def get_cell(type, reservoir_size, radius, sparsity, sigma_input):
     elif type == 'ESN':
         from cells.esn_cell import ESNCell
         return ESNCell(reservoir_size, radius, sparsity, sigma_input)
+    elif type == 'ESN_torch':
+        from cells.esn_cell_torch import ESNCell
+        return ESNCell(reservoir_size, radius, sparsity, sigma_input)
+    else:
+        raise RuntimeError('Unknown cell type.')
