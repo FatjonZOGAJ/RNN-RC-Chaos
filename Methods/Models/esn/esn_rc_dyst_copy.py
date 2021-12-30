@@ -20,7 +20,7 @@ from sklearn.base import BaseEstimator
 
 
 from models.utils import eval_simple, eval_all_dyn_syst, set_seed
-from models.utils_filip import eval_all_hard_dyn_syst
+from models.utils_filip import eval_all_dyn_syst_filip
 
 from rc_chaos.Methods.RUN import new_args_dict
 
@@ -51,54 +51,26 @@ class esn(GlobalForecastingModel, BaseEstimator):
     def delete(self):
         return 0
 
-    def __init__(self, cell_type="ESN", reservoir_size=1000, sparsity=0.1, radius=0.6, sigma_input=1,
-                 dynamics_fit_ratio=2/7, regularization=1.0, scaler_tt='Standard', solver="pinv", model_name='RC-CHAOS-ESN',
+    def __init__(self, cell_type="ESN", reservoir_size=1000, sparsity=0.1, radius=0.5, sigma_input=1,
+                 dynamics_fit_ratio=2/7, regularization=0.0, scaler_tt='Standard', solver="pinv", model_name='RC-CHAOS-ESN',
                  seed=1, W_scaling=1, flip_sign=False, ensemble_base_model=False):
         
         self.ensemble_base_model = ensemble_base_model      # return array instead of TimeSeries
-        self.reservoir_size = reservoir_size
-        self.sparsity = sparsity
-        self.radius = radius
-        self.sigma_input = sigma_input
         self.dynamics_fit_ratio = dynamics_fit_ratio
         self.regularization = regularization
         self.scaler_tt = scaler_tt
         self.solver = solver
         self.seed = seed
         self.model_name = model_name
+        
         self.cell_type = cell_type
-        #################### FILIP ADD
+        self.cell = get_cell(cell_type, reservoir_size, radius, sparsity, sigma_input, W_scaling, flip_sign)
+        
         self.resample = True
-        self.W_scaling = 1
-        self.flip_sign = False
-        ##########################################
         self.scaler = scaler(self.scaler_tt)
         #set_seed(seed)
         self._estimator_type = 'regressor' # for VotingRegressor
-        
-        
-    def sample_set_hyperparams(self):
-        
-        self.reservoir_size = random.choice(RESERVOIR_SIZES)
-        self.radius = random.choice(RADII)
-        self.sparsity = random.choice(SPARSITIES)
-        self.dynamic_fit_ratio = random.choice(DYNAMICS_FIT_RATIOS)
-        self.W_scaling = random.choice(W_SCALINGS)
-        self.flip_sign = random.choice(FLIP_SIGN)
-        self.solver = random.choice(SOLVERS)
-        
-        return {"reservoir_size": self.reservoir_size, "activation_func":self.activation_func, "radius":self.radius, "sparsity":self.sparsity, "solver":self.solver, "dynamic_fit_ratio":self.dynamic_fit_ratio, "W_scaling":self.W_scaling, "flip_sign":self.flip_sign}
-    
-    def set_hyperparams(self, hyperparams):
-        
-        self.reservoir_size = hyperparams['reservoir_size']
-        self.radius = hyperparams['radius']
-        self.sparsity = hyperparams['sparsity']
-        self.dynamic_fit_ratio = hyperparams['dynamic_fit_ratio']
-        self.W_scaling = hyperparams['W_scaling']
-        self.flip_sign = hyperparams['flip_sign']
-        self.solver = hyperparams['solver']
-        
+
     
     def augmentHidden(self, h):
         h_aug = h.copy()
@@ -106,7 +78,7 @@ class esn(GlobalForecastingModel, BaseEstimator):
         return h_aug
 
     def getAugmentedStateSize(self):
-        return self.reservoir_size
+        return self.cell.reservoir_size
 
     def fit(self,
             series: Union[TimeSeries, Sequence[TimeSeries]],
@@ -114,19 +86,18 @@ class esn(GlobalForecastingModel, BaseEstimator):
             future_covariates: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None
             ) -> None:
         super().fit(series)
-        self.cell = get_cell(self.cell_type, self.reservoir_size, self.radius, self.sparsity, self.sigma_input, self.W_scaling, self.flip_sign)
-
+        
+        if self.resample:
+            
+            self.cell.resample()
+        
         data = np.array(series.all_values())
         train_input_sequence = data.squeeze(1)
         dynamics_length = int(len(data) * self.dynamics_fit_ratio)
         N, input_dim = np.shape(train_input_sequence)
 
         train_input_sequence = self.scaler.scaleData(train_input_sequence)
-        
-        #if not self.resample:
-            
-          #  self.cell.fix_weights(self.W_in, self.W_h)
-            
+                    
         # TRAINING LENGTH
         tl = N - dynamics_length
 
@@ -182,10 +153,7 @@ class esn(GlobalForecastingModel, BaseEstimator):
             self.W_out = ridge.coef_
         else:
             raise ValueError("Undefined solver.")
-            
-        #self.W_in = self.cell.W_in
-        #self.W_h  = self.cell.W_h
-
+           
 
     def predictSequence(self, input_sequence, n):
         N = np.shape(input_sequence)[0]
@@ -249,7 +217,7 @@ def main():
     kwargs = new_args_dict()
     kwargs['model_name'] = model_name
     #eval_simple(esn(**kwargs))
-    eval_all_hard_dyn_syst(esn(W_scaling=1, flip_sign=False))
+    eval_all_dyn_syst_filip(esn(W_scaling=1, flip_sign=False))
 
     # for i in range(100, 200):
     #     np.random.seed(i)
