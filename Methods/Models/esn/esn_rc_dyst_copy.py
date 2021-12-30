@@ -1,19 +1,7 @@
-#!/usr/bin/env python
-# # -*- coding: utf-8 -*-
-
-"""Created by:  Jaideep Pathak, University of Maryland
-				Vlachas Pantelis, CSE-lab, ETH Zurich
-"""
-# !/usr/bin/env python
 from darts.models.forecasting.forecasting_model import GlobalForecastingModel
-from scipy.linalg import pinv2 as scipypinv2
+from scipy.linalg import pinv as scipypinv
 import os
 import sys
-
-# TODO: fix this so that it works from command line and PyCharm Debugger
-from rc_chaos.Methods.Models.esn.cells import get_cell
-from rc_chaos.Methods.Models.esn.cells.rnn_cell import RNNCell
-from sklearn.base import BaseEstimator
 
 module_paths = [
     os.path.abspath(os.getcwd()),
@@ -25,7 +13,15 @@ for module_path in module_paths:
     if module_path not in sys.path:
         sys.path.append(module_path)
 
+# TODO: fix this so that it works from command line and PyCharm Debugger
+from rc_chaos.Methods.Models.esn.cells import get_cell
+from rc_chaos.Methods.Models.esn.cells.rnn_cell import RNNCell
+from sklearn.base import BaseEstimator
+
+
 from models.utils import eval_simple, eval_all_dyn_syst, set_seed
+from models.utils_filip import eval_all_hard_dyn_syst
+
 from rc_chaos.Methods.RUN import new_args_dict
 
 from rc_chaos.Methods.Models.Utils.global_utils import *
@@ -39,16 +35,26 @@ from sklearn.linear_model import Ridge
 from typing import Union, Sequence, Optional
 from darts import TimeSeries
 
+RESERVOIR_SIZES = [1000, 2000]
+ACTIVATION_FUNCTIONS = ['tanh']
+RADII = [0.1, 0.25, 0.5]
+SPARSITIES = [0.1, 0.25, 0.5]
+
+SOLVERS = ['pinv']
+FLIP_SIGN = [True, False]
+W_SCALINGS = [1, 5, 10]
+DYNAMICS_FIT_RATIOS = [2/7, 3/7, 4/7]
+
 
 # TODO: RegressorModel or GlobalForecastingModel ?
 class esn(GlobalForecastingModel, BaseEstimator):
     def delete(self):
         return 0
 
-    def __init__(self, cell_type="ESN", reservoir_size=1000, sparsity=0.01, radius=0.6, sigma_input=1,
-                 dynamics_fit_ratio=2 / 7,
-                 regularization=0.0, scaler_tt='Standard', solver='auto', model_name='RC-CHAOS-ESN',
-                 seed=1, ensemble_base_model=False):
+    def __init__(self, cell_type="ESN", reservoir_size=1000, sparsity=0.1, radius=0.6, sigma_input=1,
+                 dynamics_fit_ratio=2/7, regularization=1.0, scaler_tt='Standard', solver="pinv", model_name='RC-CHAOS-ESN',
+                 seed=1, W_scaling=1, flip_sign=False, ensemble_base_model=False):
+        
         self.ensemble_base_model = ensemble_base_model      # return array instead of TimeSeries
         self.reservoir_size = reservoir_size
         self.sparsity = sparsity
@@ -61,11 +67,39 @@ class esn(GlobalForecastingModel, BaseEstimator):
         self.seed = seed
         self.model_name = model_name
         self.cell_type = cell_type
+        #################### FILIP ADD
+        self.resample = True
+        self.W_scaling = 1
+        self.flip_sign = False
         ##########################################
         self.scaler = scaler(self.scaler_tt)
-        set_seed(seed)
+        #set_seed(seed)
         self._estimator_type = 'regressor' # for VotingRegressor
-
+        
+        
+    def sample_set_hyperparams(self):
+        
+        self.reservoir_size = random.choice(RESERVOIR_SIZES)
+        self.radius = random.choice(RADII)
+        self.sparsity = random.choice(SPARSITIES)
+        self.dynamic_fit_ratio = random.choice(DYNAMICS_FIT_RATIOS)
+        self.W_scaling = random.choice(W_SCALINGS)
+        self.flip_sign = random.choice(FLIP_SIGN)
+        self.solver = random.choice(SOLVERS)
+        
+        return {"reservoir_size": self.reservoir_size, "activation_func":self.activation_func, "radius":self.radius, "sparsity":self.sparsity, "solver":self.solver, "dynamic_fit_ratio":self.dynamic_fit_ratio, "W_scaling":self.W_scaling, "flip_sign":self.flip_sign}
+    
+    def set_hyperparams(self, hyperparams):
+        
+        self.reservoir_size = hyperparams['reservoir_size']
+        self.radius = hyperparams['radius']
+        self.sparsity = hyperparams['sparsity']
+        self.dynamic_fit_ratio = hyperparams['dynamic_fit_ratio']
+        self.W_scaling = hyperparams['W_scaling']
+        self.flip_sign = hyperparams['flip_sign']
+        self.solver = hyperparams['solver']
+        
+    
     def augmentHidden(self, h):
         h_aug = h.copy()
         h_aug[::2] = pow(h_aug[::2], 2.0)
@@ -80,7 +114,7 @@ class esn(GlobalForecastingModel, BaseEstimator):
             future_covariates: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None
             ) -> None:
         super().fit(series)
-        self.cell = get_cell(self.cell_type, self.reservoir_size, self.radius, self.sparsity, self.sigma_input)
+        self.cell = get_cell(self.cell_type, self.reservoir_size, self.radius, self.sparsity, self.sigma_input, self.W_scaling, self.flip_sign)
 
         data = np.array(series.all_values())
         train_input_sequence = data.squeeze(1)
@@ -88,7 +122,11 @@ class esn(GlobalForecastingModel, BaseEstimator):
         N, input_dim = np.shape(train_input_sequence)
 
         train_input_sequence = self.scaler.scaleData(train_input_sequence)
-
+        
+        #if not self.resample:
+            
+          #  self.cell.fix_weights(self.W_in, self.W_h)
+            
         # TRAINING LENGTH
         tl = N - dynamics_length
 
@@ -119,22 +157,21 @@ class esn(GlobalForecastingModel, BaseEstimator):
                 YTH += Y.T @ H
                 H = []
                 Y = []
-
         if self.solver == "pinv" and (len(H) != 0):
             # ADDING THE REMAINING BATCH
             H = np.array(H)
             Y = np.array(Y)
             HTH += H.T @ H
             YTH += Y.T @ H
-
+            
         if self.solver == "pinv":
             """
             Learns mapping H -> Y with Penrose Pseudo-Inverse
             """
             I = np.identity(np.shape(HTH)[1])
-            pinv_ = scipypinv2(HTH + self.regularization * I)
+            pinv_ = scipypinv(HTH + self.regularization * I)
             self.W_out = YTH @ pinv_
-
+        
         elif self.solver in ["auto", "svd", "cholesky", "lsqr", "sparse_cg", "sag"]:
             """
             Learns mapping H -> Y with Ridge Regression
@@ -145,6 +182,10 @@ class esn(GlobalForecastingModel, BaseEstimator):
             self.W_out = ridge.coef_
         else:
             raise ValueError("Undefined solver.")
+            
+        #self.W_in = self.cell.W_in
+        #self.W_h  = self.cell.W_h
+
 
     def predictSequence(self, input_sequence, n):
         N = np.shape(input_sequence)[0]
@@ -204,11 +245,11 @@ class esn(GlobalForecastingModel, BaseEstimator):
 # TODO: calculate eigenvalues for those matrices and then plot in the landscape
 # for which dyn systs those perform best, are there any characteristics
 def main():
-    model_name = 'RC-CHAOS-ESN_DEBUG_DEFAULT'
+    model_name = 'RC-CHAOS-ESN'
     kwargs = new_args_dict()
     kwargs['model_name'] = model_name
-    eval_simple(esn(**kwargs))
-    eval_all_dyn_syst(esn(**kwargs))
+    #eval_simple(esn(**kwargs))
+    eval_all_hard_dyn_syst(esn(W_scaling=1, flip_sign=False))
 
     # for i in range(100, 200):
     #     np.random.seed(i)
