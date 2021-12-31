@@ -36,7 +36,7 @@ class ESNCell():
                 success = True
                 
                 if self.flip_sign:
-                    W *= (np.random.binomial(1, 0.5, (sizex, sizey)) - 0.5)*2
+                    W *= (np.random.binomial(1, 0.5, (self.reservoir_size, self.reservoir_size)) - 0.5)*2
 
             except:
                 sucess = False
@@ -57,12 +57,10 @@ class ESNCell():
         return W_in
     
     def resample(self):
-        
         self.W_h  = self._getHiddenMatrix()
         self.W_in = self._getInputMatrx()
         
     def fix_weights(self, W_in, W_h):
-        
         self.W_h = W_h
         self.W_in = W_in
         
