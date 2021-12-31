@@ -15,7 +15,7 @@ def get_cell(type, reservoir_size, radius, sparsity, sigma_input, W_scaling=1, f
     elif type == 'ESN':
         return ESNCell_numpy(reservoir_size, radius, sparsity, sigma_input, W_scaling, flip_sign, resample)
     elif type == 'ESN_torch':
-        from esn_cell_torch import ESNCell
+        from rc_chaos.Methods.Models.esn.cells.esn_cell_torch import ESNCell
         return ESNCell_torch(reservoir_size, radius, sparsity, sigma_input)
     else:
         raise RuntimeError('Unknown cell type.')
