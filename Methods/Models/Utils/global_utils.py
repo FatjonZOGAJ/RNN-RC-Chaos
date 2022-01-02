@@ -346,7 +346,7 @@ def subsample(data, max_samples):
 
 def getNewESNParser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cell_type", help="cell for embedding", type=str, default='ESN')
+    parser.add_argument("--cell_type", help="cell for embedding", type=str, default='ESN_torch')
     parser.add_argument("--reservoir_size", help="reservoir_size", type=int, default=1000)
     parser.add_argument("--sparsity", help="sparsity", type=float, default=0.01)
     parser.add_argument("--radius", help="radius", type=float, default=0.6)

@@ -55,7 +55,7 @@ class esn(GlobalForecastingModel, BaseEstimator):
     def delete(self):
         return 0
 
-    def __init__(self, cell_type="ESN", reservoir_size=1000, sparsity=0.1, radius=0.5, sigma_input=1,
+    def __init__(self, cell_type="ESN_torch", reservoir_size=1000, sparsity=0.1, radius=0.5, sigma_input=1,
                  dynamics_fit_ratio=2/7, regularization=0.0, scaler_tt='Standard', solver="pinv", model_name='RC-CHAOS-ESN',
                  seed=1, W_scaling=1, flip_sign=False, ensemble_base_model=False, resample=False):
         
@@ -276,6 +276,10 @@ def main():
 
     start_time = time.time()
     # best Rank 5.5 with torch
+    # most occured hyperparameters
+    #kwargs = {"reservoir_size": 1000, "sparsity": 0.01, "radius": 0.5, "sigma_input": 1, "dynamics_fit_ratio": 0.2857142857142857,
+    #          "regularization": 0.0,
+    #          "scaler_tt": 'Standard', "solver": 'pinv'}
     kwargs['cell_type'] = 'ESN_torch'
     eval_all_dyn_syst(esn(**kwargs, resample=False))
     print(f'Eval all took {time.time() - start_time} seconds')
