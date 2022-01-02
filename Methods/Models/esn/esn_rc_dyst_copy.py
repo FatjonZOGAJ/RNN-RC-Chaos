@@ -1,3 +1,5 @@
+import time
+
 import darts
 from darts.models.forecasting.forecasting_model import GlobalForecastingModel
 from scipy.linalg import pinv as scipypinv
@@ -271,6 +273,14 @@ def main():
     kwargs['model_name'] = model_name
     eval_simple(esn(**kwargs, resample=True))
     eval_simple(esn(**kwargs, resample=False))
+
+    start_time = time.time()
+    # best Rank 5.5 with torch
+    kwargs['cell_type'] = 'ESN_torch'
+    eval_all_dyn_syst(esn(**kwargs, resample=False))
+    print(f'Eval all took {time.time() - start_time} seconds')
+    return
+
 
     # Resampling can be a lot better
     eval_single_dyn_syst(esn(**kwargs, resample=True), 'Chua')

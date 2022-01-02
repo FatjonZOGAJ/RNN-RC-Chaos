@@ -355,7 +355,7 @@ def getNewESNParser():
     parser.add_argument("--regularization", help="regularization", type=float, default=0.0)
     parser.add_argument("--scaler_tt", help="scaler_tt", type=str, default='Standard')
     parser.add_argument("--solver", help="solver used to learn mapping H -> Y, it can be [pinv, saga, gd]", type=str,
-                        default="auto")
+                        default="pinv")
     parser.add_argument("--seed", type=int, default=1)
 
     return parser
