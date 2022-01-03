@@ -1,5 +1,5 @@
 import time
-
+import random
 import darts
 from darts.models.forecasting.forecasting_model import GlobalForecastingModel
 from scipy.linalg import pinv as scipypinv
@@ -38,17 +38,7 @@ from sklearn.linear_model import Ridge
 from typing import Union, Sequence, Optional
 from darts import TimeSeries
 
-RESERVOIR_SIZES = [1000, 2000]
-# always tanh
-# ACTIVATION_FUNCTIONS = ['tanh']
-RADII = [0.1, 0.25, 0.5]
-SPARSITIES = [0.1, 0.25]
-
-SOLVERS = ['pinv', 'auto']
-FLIP_SIGN = [True, False]
-W_SCALINGS = [1, 5, 10]
 DYNAMICS_FIT_RATIOS = [2/7, 3/7, 4/7]
-
 
 # TODO: RegressorModel or GlobalForecastingModel ?
 class esn(GlobalForecastingModel, BaseEstimator):
@@ -56,8 +46,8 @@ class esn(GlobalForecastingModel, BaseEstimator):
         return 0
 
     def __init__(self, cell_type="ESN", reservoir_size=1000, sparsity=0.1, radius=0.5, sigma_input=1,
-                 dynamics_fit_ratio=2/7, regularization=0.0, scaler_tt='Standard', solver="pinv", model_name='RC-CHAOS-ESN',
-                 seed=1, W_scaling=1, flip_sign=False, ensemble_base_model=False, resample=False):
+                 dynamics_fit_ratio=2/7, regularization=0.1, scaler_tt='Standard', solver="auto", model_name='RC-CHAOS-ESN',
+                 seed=1, W_scaling=1, flip_sign=False, ensemble_base_model=False):
         
         self.ensemble_base_model = ensemble_base_model      # return array instead of TimeSeries
         self.dynamics_fit_ratio = dynamics_fit_ratio
@@ -79,9 +69,8 @@ class esn(GlobalForecastingModel, BaseEstimator):
         self.cell_type = cell_type
         self._cell = get_cell(cell_type, reservoir_size, radius, sparsity, sigma_input, W_scaling, flip_sign)
         
-        self.resample = resample
         self.scaler = scaler(self.scaler_tt)
-        set_seed(seed)
+        #set_seed(seed)
         self._estimator_type = 'regressor' # for VotingRegressor
 
     
@@ -94,58 +83,65 @@ class esn(GlobalForecastingModel, BaseEstimator):
         return self._cell.reservoir_size
 
     # TODO: also implement with separate validation train data
-    def find_best_initial_weights(self, train_data, val_ratio=4/5, n_tries=10):
+    def find_best_initial_weights(self, y_train, y_val, n_tries=10):
+        
         min_smape = 1000000
         min_smape_model = None
-        split_point = int(val_ratio * len(train_data))
-        y_train, y_val = train_data[:split_point], train_data[split_point:]
-        y_train_ts, y_test_ts = TimeSeries.from_dataframe(pd.DataFrame(train_data)).split_before(split_point)
 
-        self.resample = False       # so that model gets fit normally
-        for i in range(n_tries):
-            #hyperparams = model.sample_set_hyperparams()
-            self._cell.resample()       # resample self.W_in and self.jW_h
-            self._cell.reset()          # reset self.h
-
+        y_train_ts = TimeSeries.from_dataframe(pd.DataFrame(y_train))
+        y_val_ts = TimeSeries.from_dataframe(pd.DataFrame(y_val))
+                
+        for i in range(50):
+            
+            hyperparams = self._cell.sample_set_hyperparams()
+            
+            if hyperparams['reservoir_size'] == 100:
+                
+                self.regularization = 0.01
+            
+            elif hyperparams['reservoir_size'] == 500: 
+                
+                self.regularization = 0.1
+                
+            else:
+                
+                self.regularization = 1.0
+                
+            self._cell.resample()       
+            self.dynamics_fit_ratio = random.choice(DYNAMICS_FIT_RATIOS)
+            
             self.fit(y_train_ts)
 
             y_val_pred = self.predict(len(y_val))
             y_val_pred = np.squeeze(y_val_pred.values())
 
             pred_y = TimeSeries.from_dataframe(pd.DataFrame(y_val_pred))
-            true_y = TimeSeries.from_dataframe(pd.DataFrame(np.squeeze(y_val)[:-1]))
+            true_y = TimeSeries.from_dataframe(pd.DataFrame(np.squeeze(y_val)))
 
             metric_func = getattr(darts.metrics.metrics, 'smape')
             score = metric_func(true_y, pred_y)
             if score < min_smape:
-                #min_hyperparams = hyperparams
+                
+                min_dynamics_fit_ratio = self.dynamics_fit_ratio
+                min_hyperparams = hyperparams
                 min_smape = score
                 min_W_in = self._cell.W_in
                 min_W_h  = self._cell.W_h
 
-        #model.dynamic_fit_ratio = 4/7
-        #print(min_hyperparams)
-        #model.set_hyperparams(min_hyperparams)
-
-        # Fix best weights and reinit self._cell.h
+        print(min_hyperparams, "dynamics_fit_ratio", min_dynamics_fit_ratio)
+        self.dynamics_fit_ratio = min_dynamics_fit_ratio
+        self._cell.set_hyperparams(min_hyperparams)
         self._cell.fix_weights(min_W_in, min_W_h)
-        self._cell.reset()
-        self.resample = False
-
-
-    # NOTE: Calling fit multiple times, does not resample self._cell weights
-    # for that, call self._cell.resample()
+        self.regularization = 0.01
+        
+        
     def fit(self,
             series: Union[TimeSeries, Sequence[TimeSeries]],
             past_covariates: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None,
             future_covariates: Optional[Union[TimeSeries, Sequence[TimeSeries]]] = None
             ) -> None:
-        train_data = series.values().squeeze()
-        if self.resample:
-            self.find_best_initial_weights(train_data, val_ratio=4/5)
-
+        
         super().fit(series)
-
         data = np.array(series.all_values())
         train_data = data.squeeze(1)
         dynamics_length = int(len(train_data) * self.dynamics_fit_ratio)
@@ -155,7 +151,8 @@ class esn(GlobalForecastingModel, BaseEstimator):
                     
         # TRAINING LENGTH
         tl = N - dynamics_length
-
+        
+        self._cell.reset()
         for t in range(dynamics_length):
             self._cell.forward(train_data[t])
 
@@ -165,8 +162,9 @@ class esn(GlobalForecastingModel, BaseEstimator):
             YTH = np.zeros((input_dim, self.getAugmentedStateSize()))
         H = []
         Y = []
+        
+        
 
-        # TRAINING: Teacher forcing...
         for t in range(tl - 1):
             h = self._cell.forward(train_data[t + dynamics_length])
 
@@ -269,31 +267,33 @@ class esn(GlobalForecastingModel, BaseEstimator):
 # for which dyn systs those perform best, are there any characteristics
 def main():
     model_name = 'RC-CHAOS-ESN'
-    kwargs = new_args_dict()
-    kwargs['model_name'] = model_name
-    eval_simple(esn(**kwargs, resample=True))
-    eval_simple(esn(**kwargs, resample=False))
+    eval_all_dyn_syst_filip(esn())
 
-    start_time = time.time()
+    #kwargs = new_args_dict()
+    #kwargs['model_name'] = model_name
+    #eval_simple(esn(**kwargs, resample=True))
+    #eval_simple(esn(**kwargs, resample=False))
+
+    #start_time = time.time()
     # best Rank 5.5 with torch
-    kwargs['cell_type'] = 'ESN_torch'
-    eval_all_dyn_syst(esn(**kwargs, resample=False))
-    print(f'Eval all took {time.time() - start_time} seconds')
-    return
+    #kwargs['cell_type'] = 'ESN_torch'
+    #eval_all_dyn_syst(esn(**kwargs, resample=False))
+    #print(f'Eval all took {time.time() - start_time} seconds')
+    #return
 
 
     # Resampling can be a lot better
-    eval_single_dyn_syst(esn(**kwargs, resample=True), 'Chua')
-    eval_single_dyn_syst(esn(**kwargs, resample=False), 'Chua')
+    #eval_single_dyn_syst(esn(**kwargs, resample=True), 'Chua')
+    #eval_single_dyn_syst(esn(**kwargs, resample=False), 'Chua')
 
     # or slightly worse
-    eval_single_dyn_syst(esn(**kwargs, resample=True), 'CellCycle')
-    eval_single_dyn_syst(esn(**kwargs, resample=False), 'CellCycle')
+    #eval_single_dyn_syst(esn(**kwargs, resample=True), 'CellCycle')
+    #eval_single_dyn_syst(esn(**kwargs, resample=False), 'CellCycle')
 
     # but is actually on average worse...
-    eval_all_dyn_syst(esn(**kwargs, resample=True))
-    eval_all_dyn_syst(esn(**kwargs, resample=False))
-    #eval_all_dyn_syst_filip(esn(W_scaling=1, flip_sign=False, resample=True))
+    #eval_all_dyn_syst(esn(**kwargs, resample=True))
+    #eval_all_dyn_syst(esn(**kwargs, resample=False))
+    
 
 
 

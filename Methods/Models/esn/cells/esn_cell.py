@@ -2,9 +2,16 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
 import copy
+import random
+
+RESEVOIR_SIZES = [500, 1000]
+RADII = [0.1, 0.25, 0.5, 0.75]
+SPARSITIES = [0.01, 0.1, 0.25]
+FLIP_SIGN = [False, True]
+W_SCALINGS = [1]
 
 class ESNCell():
-    def __init__(self, reservoir_size, radius, sparsity, sigma_input, W_scaling=1, flip_sign=False, resample=True):
+    def __init__(self, reservoir_size, radius, sparsity, sigma_input, W_scaling=1, flip_sign=False):
         
         self.reservoir_size = reservoir_size
         self.W_scaling = W_scaling
@@ -14,7 +21,6 @@ class ESNCell():
         self.sparsity = sparsity
         self.sigma_input = sigma_input
         
-        self.resample()
         self.h = np.zeros((self.reservoir_size, 1))
 
 
@@ -72,28 +78,21 @@ class ESNCell():
     def reset(self):
         self.h = np.zeros((self.reservoir_size, 1))
         
-  
-
-    '''    
+        
     def sample_set_hyperparams(self):
         
-        self.reservoir_size = random.choice(RESERVOIR_SIZES)
+        self.reservoir_size = random.choice(RESEVOIR_SIZES)
         self.radius = random.choice(RADII)
         self.sparsity = random.choice(SPARSITIES)
-        self.dynamic_fit_ratio = random.choice(DYNAMICS_FIT_RATIOS)
         self.W_scaling = random.choice(W_SCALINGS)
         self.flip_sign = random.choice(FLIP_SIGN)
-        self.solver = random.choice(SOLVERS)
         
-        return {"reservoir_size": self.reservoir_size, "activation_func":self.activation_func, "radius":self.radius, "sparsity":self.sparsity, "solver":self.solver, "dynamic_fit_ratio":self.dynamic_fit_ratio, "W_scaling":self.W_scaling, "flip_sign":self.flip_sign}
+        return { "reservoir_size":self.reservoir_size, "radius":self.radius, "sparsity":self.sparsity, "W_scaling":self.W_scaling, "flip_sign":self.flip_sign}
     
     def set_hyperparams(self, hyperparams):
         
         self.reservoir_size = hyperparams['reservoir_size']
         self.radius = hyperparams['radius']
         self.sparsity = hyperparams['sparsity']
-        self.dynamic_fit_ratio = hyperparams['dynamic_fit_ratio']
         self.W_scaling = hyperparams['W_scaling']
         self.flip_sign = hyperparams['flip_sign']
-        self.solver = hyperparams['solver']
-   '''     

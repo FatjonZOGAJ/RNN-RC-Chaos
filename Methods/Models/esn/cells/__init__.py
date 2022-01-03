@@ -5,7 +5,7 @@ from rc_chaos.Methods.Models.esn.cells.lstm_cell import LSTMCell
 from rc_chaos.Methods.Models.esn.cells.rnn_cell import RNNCell
 
 
-def get_cell(type, reservoir_size, radius, sparsity, sigma_input, W_scaling=1, flip_sign=False, resample=True):
+def get_cell(type, reservoir_size, radius, sparsity, sigma_input, W_scaling=1, flip_sign=False):
     if type == 'GRU':
         return GRUCell(reservoir_size)
     elif type == 'LSTM':
@@ -13,7 +13,7 @@ def get_cell(type, reservoir_size, radius, sparsity, sigma_input, W_scaling=1, f
     elif type == 'RNN':
         return RNNCell(reservoir_size)
     elif type == 'ESN':
-        return ESNCell_numpy(reservoir_size, radius, sparsity, sigma_input, W_scaling, flip_sign, resample)
+        return ESNCell_numpy(reservoir_size, radius, sparsity, sigma_input, W_scaling, flip_sign)
     elif type == 'ESN_torch':
         from rc_chaos.Methods.Models.esn.cells.esn_cell_torch import ESNCell
         return ESNCell_torch(reservoir_size, radius, sparsity, sigma_input)
