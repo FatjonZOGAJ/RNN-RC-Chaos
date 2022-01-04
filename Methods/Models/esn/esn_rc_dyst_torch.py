@@ -1,16 +1,5 @@
-#!/usr/bin/env python
-# # -*- coding: utf-8 -*-
-
-"""Created by:  Jaideep Pathak, University of Maryland
-				Vlachas Pantelis, CSE-lab, ETH Zurich
-"""
-# !/usr/bin/env python
-import numpy as np
 import torch
 from darts.models.forecasting.forecasting_model import GlobalForecastingModel
-from scipy import sparse as sparse
-from scipy.sparse import linalg as splinalg
-from scipy.linalg import pinv2 as scipypinv2
 import os
 import sys
 
@@ -33,7 +22,7 @@ for module_path in module_paths:
     if module_path not in sys.path:
         sys.path.append(module_path)
 
-from models.utils import eval_simple, eval_all_dyn_syst, eval_single_dyn_syst
+from models.utils import eval_all_dyn_syst
 from rc_chaos.Methods.RUN import new_args_dict
 
 from rc_chaos.Methods.Models.Utils.global_utils import *
@@ -64,8 +53,8 @@ class esn(GlobalForecastingModel):
         self.sigma_input = sigma_input
         self.dynamics_fit_ratio = dynamics_fit_ratio
         self.regularization = regularization
+        self.solver = 'auto'
         self.scaler_tt = scaler_tt
-        self.solver = solver
         self.scaler = scaler(self.scaler_tt)
 
     def getWeights(self, sizex, sizey, radius, sparsity):
@@ -144,28 +133,25 @@ class esn(GlobalForecastingModel):
             Y_test = [torch.tensor(x) for x in Y[split:]]
             H = [torch.clone(x).detach().numpy() for x in H]
 
-            # Learn mapping H -> Y with Ridge Regression
-            if self.solver in ["auto", "svd", "cholesky", "lsqr", "sparse_cg", "sag"]:
-                ridge = Ridge(alpha=self.regularization, fit_intercept=False, copy_X=True,
-                              solver=self.solver)
-                if iter == iterations - 1:
-                    ridge.fit(H, Y)
-                else:
-                    ridge.fit(H_train, Y_train)
+            ridge = Ridge(alpha=self.regularization, fit_intercept=False, copy_X=True,
+                          solver=self.solver)
+            if iter == iterations - 1:
+                ridge.fit(H, Y)
                 W_out = torch.tensor(ridge.coef_)
+                break
             else:
-                raise ValueError("Undefined solver.")
+                ridge.fit(H_train, Y_train)
+                W_out = torch.tensor(ridge.coef_)
 
             loss = torch.tensor([0], dtype=torch.float64)
             for sample in range(len(H_test)):
                 loss += torch.pow(W_out @ H_test[sample] - Y_test[sample], 2)
+            loss /= len(H_test)
 
             loss.backward()
 
             with torch.no_grad():
-                print('Loss: ' + str(loss))
-                if iter == iterations - 1:
-                    break
+                print('Loss: ' + str(loss * 1e9))
                 W_in -= learning_rate * W_in.grad
                 W_h -= learning_rate * W_h.grad
                 W_in.grad.zero_()
@@ -184,9 +170,8 @@ class esn(GlobalForecastingModel):
         W_out = self.W_out
         W_in = self.W_in
         N = np.shape(input_sequence)[0]
-        # HAS TO BE LENGTH OF INPUT SEQUENCE TO PREDICT THE FOLLOWING STEPS N + 1, N + 2, ...
         dynamics_length = N
-        iterative_prediction_length = n  # until N + n
+        iterative_prediction_length = n
 
         self.reservoir_size, _ = np.shape(W_h)
 
@@ -223,14 +208,9 @@ class esn(GlobalForecastingModel):
             series = self.training_series
         input_sequence = series.all_values().squeeze(1)  # (1000, 1)
 
-        # TODO maybe we can average results of multiple predictions with various dynamic_fit_ratios?
-        num_test_ICS = 1  # TODO self.num_test_ICS
+        num_test_ICS = 1
         input_sequence = self.scaler.scaleData(input_sequence, reuse=1)
         for ic_num in range(num_test_ICS):
-            # TODO: try out only once with full length
-            # ic_idx = random.choice(range(self.dynamics_length, len(input_sequence) - self.iterative_prediction_length))[0]# random indexes within input_sequence_len
-            # input_sequence_ic = input_sequence[ic_idx-self.dynamics_length:ic_idx+self.iterative_prediction_length]
-            ic_idx = 0
             input_sequence_ic = input_sequence
             prediction, prediction_augment = self.predictSequence(input_sequence_ic, n)
             prediction = self.scaler.descaleData(prediction)
@@ -240,20 +220,7 @@ class esn(GlobalForecastingModel):
 
 
 def main():
-    # eval_simple(esn(**new_args_dict()))
-    # np.random.seed(114)
-    best_seed = -1
-    best_score = np.inf
-    for i in range(1, 10):
-        np.random.seed(0)
-        value, _, _ = eval_single_dyn_syst(esn(i, **new_args_dict()), 'YuWang')
-        if value < best_score:
-            best_seed = i
-            best_score = value
-    print(best_seed, best_score)
-
-
-# value = eval_single_dyn_syst(esn(**new_args_dict()), 'Chua')
+    eval_all_dyn_syst(esn(5, **new_args_dict()))
 
 
 if __name__ == '__main__':
