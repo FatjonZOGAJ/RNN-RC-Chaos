@@ -346,10 +346,10 @@ def subsample(data, max_samples):
 
 def getNewESNParser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cell_type", help="cell for embedding", type=str, default='ESN')
+    parser.add_argument("--cell_type", help="cell for embedding", type=str, default='ESN_torch')
     parser.add_argument("--reservoir_size", help="reservoir_size", type=int, default=1000)
     parser.add_argument("--sparsity", help="sparsity", type=float, default=0.01)
-    parser.add_argument("--radius", help="radius", type=float, default=0.6)
+    parser.add_argument("--radius", help="radius", type=float, default=0.5)
     parser.add_argument("--sigma_input", help="sigma_input", type=float, default=1)
     parser.add_argument("--dynamics_fit_ratio", help="dynamics_fit_ratio", type=float, default=2 / 7)
     parser.add_argument("--regularization", help="regularization", type=float, default=0.0)
